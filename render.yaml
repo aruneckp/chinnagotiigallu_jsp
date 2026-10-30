@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ward53-voter-analytics
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      # Sign-in details. Render asks for the values when you apply the
+      # Blueprint; they are never stored in this repository.
+      - key: VOTER_USER
+        sync: false
+      - key: VOTER_PASS
+        sync: false
+    headers:
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow
