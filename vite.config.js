@@ -62,6 +62,7 @@ export default defineConfig(({ mode }) => {
   }
   return {
     plugins: [react(), encryptedVoters(env.VOTER_USER, env.VOTER_PASS), voterPhotos()],
-    build: { outDir: "dist", chunkSizeWarningLimit: 1200 },
+    // The encrypted voter dataset is intentionally bundled as one virtual chunk.
+    build: { outDir: "dist", chunkSizeWarningLimit: 2400 },
   };
 });

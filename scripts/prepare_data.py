@@ -22,6 +22,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--family-dir", default=os.path.join(ROOT, "..", "csv-family-tree"))
 ap.add_argument("--csv")
 ap.add_argument("--graph")
+ap.add_argument("--page-data", help="csv-family-tree page_data.json matching the updated polling CSV")
 ap.add_argument("--out", default=os.path.join(ROOT, "src", "data", "voters.json"))
 ap.add_argument("--place", default="Tirupati")
 a = ap.parse_args()
@@ -202,14 +203,182 @@ def prepare_village_csv(rows, graph, edges, out_path):
     print(f"{len(out_rows)} voters from {len(files)} source PDFs, {len(ghost_rows)} relatives not on the list -> {out_path}")
 
 
+def prepare_polling_csv(rows, page_data, out_path):
+    """Map the enriched polling-station CSV and its matching family page data."""
+    people = page_data.get("P", [])
+    voters = [p for p in people if not p[15]]
+    if len(rows) != len(voters):
+        sys.exit(f"page_data has {len(voters)} voter nodes but CSV has {len(rows)} rows")
+
+    required = {"file", "serial_no", "ac_no", "ac_part_no", "ac_serial_no", "voter_name", "age", "gender",
+                "house_no", "epic_no", "pdf_page", "mptc_constituency", "gram_panchayat",
+                "polling_station_no", "polling_station_building", "polling_station_locality",
+                "ps_house_no_from", "ps_house_no_to", "ps_serial_from", "ps_serial_to",
+                "ps_total_voters", "ps_voters_for", "ps_match_check"}
+    missing = required - set(rows[0]) if rows else required
+    if missing:
+        sys.exit(f"updated polling CSV is missing columns: {', '.join(sorted(missing))}")
+
+    people_by_id = {str(p[0]): p for p in people}
+    row_by_graph_id = {}
+    for index, (row, person) in enumerate(zip(rows, voters), start=1):
+        age = int(row["age"]) if str(row.get("age", "")).strip().isdigit() else None
+        if ((row.get("voter_name") or "") != person[1] or age != person[3]
+                or (row.get("house_no") or "") != str(person[4] or "")):
+            sys.exit(f"page_data and updated CSV do not align at row {index}; regenerate page_data.json from this CSV")
+        row_by_graph_id[str(person[0])] = index
+
+    sidecar_path = os.path.join(fam_dir, "family_out", "family_links.csv")
+    sidecar = []
+    if os.path.exists(sidecar_path):
+        with open(sidecar_path, newline="", encoding="utf-8-sig") as fh:
+            candidate = list(csv.DictReader(fh))
+        if len(candidate) == len(rows) and all(candidate[i].get("voter_name") == rows[i].get("voter_name") for i in range(len(rows))):
+            sidecar = candidate
+
+    gp_values = sorted({(r.get("gram_panchayat") or "").strip() for r in rows})
+    gp_index = {name: i + 1 for i, name in enumerate(gp_values)}
+    ghosts, ghost_source, links = {}, {}, {}
+    review_notes = {}
+    parent = {f"v:{i}": f"v:{i}" for i in range(1, len(rows) + 1)}
+    excluded_cross_gp = 0
+
+    def find(value):
+        parent.setdefault(value, value)
+        while parent[value] != value:
+            parent[value] = parent[parent[value]]
+            value = parent[value]
+        return value
+
+    def union(a, b):
+        a, b = find(a), find(b)
+        if a != b:
+            parent[a] = b
+
+    for index, (row, person) in enumerate(zip(rows, voters), start=1):
+        target = person[11]
+        if target is None:
+            continue
+        if isinstance(target, int):
+            target_index = row_by_graph_id.get(str(target))
+            if target_index is None:
+                continue
+            target_row = rows[target_index - 1]
+            if (row.get("gram_panchayat") or "").strip() != (target_row.get("gram_panchayat") or "").strip():
+                excluded_cross_gp += 1
+                review_notes[index] = "Automated family match crossed Gram Panchayats; verify the printed relative manually."
+                continue
+            target_id = str(target_index)
+            union(f"v:{index}", f"v:{target_index}")
+        else:
+            ghost = people_by_id.get(str(target))
+            if ghost is None:
+                continue
+            gp = (row.get("gram_panchayat") or "").strip()
+            key = (str(target), gp)
+            if key not in ghosts:
+                ghost_id = f"g{len(ghosts) + 1}_gp{gp_index[gp]}"
+                ghosts[key] = ghost_id
+                ghost_source[ghost_id] = ghost
+                parent[f"g:{ghost_id}"] = f"g:{ghost_id}"
+            target_id = ghosts[key]
+            union(f"v:{index}", f"g:{target_id}")
+        detail = sidecar[index - 1] if sidecar else {}
+        how = detail.get("match_basis") or ("not on list" if target_id.startswith("g") else "same house")
+        links[index] = [target_id, person[12] or row.get("relation_type", ""), how, person[16], person[13] or detail.get("check_note", "")]
+
+    components = {}
+    for index in range(1, len(rows) + 1):
+        components.setdefault(find(f"v:{index}"), {"voters": [], "ghosts": []})["voters"].append(index)
+    for ghost_id in ghost_source:
+        components.setdefault(find(f"g:{ghost_id}"), {"voters": [], "ghosts": []})["ghosts"].append(ghost_id)
+    components = sorted(components.values(), key=lambda c: min(c["voters"]) if c["voters"] else 10**12)
+    family_by_node, generation_by_node = {}, {}
+    for family_id, component in enumerate(components, start=1):
+        members = [*(f"v:{i}" for i in component["voters"]), *(f"g:{g}" for g in component["ghosts"])]
+        generations = [int(voters[int(m[2:]) - 1][8] or 0) if m.startswith("v:") else int(ghost_source[m[2:]][8] or 0) for m in members]
+        offset = min(generations) if generations else 0
+        for member, generation in zip(members, generations):
+            family_by_node[member] = family_id
+            generation_by_node[member] = max(0, generation - offset)
+
+    source_files = sorted({(r.get("file") or "").strip() for r in rows})
+    station_labels = {}
+    for row in rows:
+        ps = str(row.get("polling_station_no", ""))
+        label = f"PS {ps} · {row.get('gram_panchayat', '')} · {os.path.splitext(row.get('file', ''))[0]}"
+        if ps in station_labels and station_labels[ps] != label:
+            sys.exit(f"polling station number {ps} maps to multiple station labels")
+        station_labels[ps] = label
+
+    extras = ["sourceFile", "recordId", "mptcConstituency", "gramPanchayat", "pollingStationNo",
+              "pollingStationBuilding", "pollingStationLocality", "psHouseNoFrom", "psHouseNoTo",
+              "psSerialFrom", "psSerialTo", "psTotalVoters", "psVotersFor", "psMatchCheck", "familyLinkNote"]
+    columns = COLS + extras
+    out_rows = []
+    for index, (row, person) in enumerate(zip(rows, voters), start=1):
+        house = (row.get("house_no") or "").strip()
+        normalized_house = house_key(house)
+        pieces = normalized_house.split("-") if normalized_house else []
+        gp = (row.get("gram_panchayat") or "").strip()
+        local_block = "-".join(pieces[:2]) if len(pieces) > 1 else (pieces[0] if pieces else "")
+        block = f"{gp} · {local_block}" if local_block else ""
+        age = int(row["age"]) if str(row.get("age", "")).strip().isdigit() else 0
+        name, relative = clean(row.get("voter_name", "")), clean(row.get("relation_name", ""))
+        extras_values = [
+            (row.get("file") or "").strip(), index, row.get("mptc_constituency", ""), gp,
+            int(row["polling_station_no"]) if str(row.get("polling_station_no", "")).isdigit() else 0,
+            row.get("polling_station_building", ""), row.get("polling_station_locality", ""),
+            row.get("ps_house_no_from", ""), row.get("ps_house_no_to", ""),
+            int(row["ps_serial_from"]) if str(row.get("ps_serial_from", "")).isdigit() else 0,
+            int(row["ps_serial_to"]) if str(row.get("ps_serial_to", "")).isdigit() else 0,
+            int(row["ps_total_voters"]) if str(row.get("ps_total_voters", "")).isdigit() else 0,
+            row.get("ps_voters_for", ""), row.get("ps_match_check", ""), review_notes.get(index, ""),
+        ]
+        out_rows.append([
+            int(row.get("serial_no") or index), extras_values[4], int(row.get("pdf_page") or 0),
+            int(row.get("ac_part_no") or 0), int(row.get("ac_serial_no") or 0),
+            name, row.get("relation_type", ""), relative, age, row.get("gender", "?"),
+            house, (row.get("epic_no") or "").strip().upper(), block, f"{gp}|{normalized_house}" if normalized_house else "", row.get("issues", ""),
+            *extras_values, person[14] or search_key(name), search_key(relative), family_by_node[f"v:{index}"],
+            generation_by_node[f"v:{index}"], links.get(index),
+        ])
+
+    ghost_rows = {
+        ghost_id: [clean(person[1]), person[2], family_by_node[f"g:{ghost_id}"], generation_by_node[f"g:{ghost_id}"], person[14] or search_key(person[1])]
+        for ghost_id, person in ghost_source.items()
+    }
+    meta = {
+        "place": a.place, "ward": "", "ac": next(iter({r.get("ac_no") for r in rows if r.get("ac_no")})),
+        "source": os.path.basename(csv_path), "generated": date.today().isoformat(),
+        "hasPollingParts": True, "partLabel": "Polling station", "sourceFiles": source_files,
+        "sourceGroups": station_labels,
+        "mptcConstituencies": sorted({(r.get("mptc_constituency") or "").strip() for r in rows}),
+        "gramPanchayats": sorted({(r.get("gram_panchayat") or "").strip() for r in rows}),
+        "pollingStationCount": len(station_labels), "excludedCrossGramPanchayatFamilyLinks": excluded_cross_gp,
+    }
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump(dict(meta=meta, cols=columns, rows=out_rows, ghosts=ghost_rows), fh, ensure_ascii=False, separators=(",", ":"))
+    print(f"{len(out_rows)} voters, {len(ghost_rows)} scoped unlisted relatives, {len(station_labels)} polling stations -> {out_path}")
+    print(f"Excluded {excluded_cross_gp} family links crossing Gram Panchayats")
+
+
 # ------------------------------------------------------------------- load
 rows = list(csv.DictReader(open(csv_path, encoding="utf-8-sig")))
-g = json.load(open(graph_path, encoding="utf-8"))
-nodes = {n["id"]: n for n in g["nodes"]}
-edges = {e["s"]: e for e in g["edges"]}
 COLS = ["sn", "part", "page", "booth", "bsn", "name", "rel", "rname", "age", "gender",
         "house", "epic", "block", "hh", "issue"]
 
+if rows and {"mptc_constituency", "gram_panchayat", "polling_station_no", "ps_match_check"}.issubset(rows[0]):
+    page_data_path = a.page_data or os.path.join(fam_dir, "family_out", "page_data.json")
+    if not os.path.exists(page_data_path):
+        sys.exit(f"updated polling CSV needs matching --page-data file: {page_data_path}")
+    prepare_polling_csv(rows, json.load(open(page_data_path, encoding="utf-8")), a.out)
+    raise SystemExit(0)
+
+g = json.load(open(graph_path, encoding="utf-8"))
+nodes = {n["id"]: n for n in g["nodes"]}
+edges = {e["s"]: e for e in g["edges"]}
 if rows and "gp_serial_no" in rows[0]:
     prepare_family_export(rows, g, edges, a.out)
     raise SystemExit(0)

@@ -18,6 +18,9 @@ export let FAMILIES = new Map();  // family id -> { id, voters, ghosts, root, ge
 export let HOUSES = [];           // house id - 1 -> { id, key, label, block, voters, families }
 export let PARTS = [];            // [[value, count]] sorted by value
 export let BOOTHS = [];           // main polling parts, then "other"
+export let MPTCS = [];            // [[constituency, voter count]]
+export let GRAM_PANCHAYATS = [];  // [[gram panchayat, voter count]]
+export let POLLING_STATIONS = []; // [[polling station number, voter count]]
 export let BLOCKS = [];           // every block, largest first
 export let MAIN_BLOCKS = [];      // blocks shown on their own in charts
 export let SERIES = [];           // voter ID series (first three letters)
@@ -51,12 +54,12 @@ export function init(RAW) {
     o.gen = r[n + 3];
     const l = r[n + 4];
     o.link = l ? { to: String(l[0]), type: l[1], how: l[2], score: l[3], note: l[4] } : null;
-    o.linkKind = !l ? "none" : String(l[0]).startsWith("g") ? "ghost" : "voter";
+    o.linkKind = !l ? (o.familyLinkNote ? "review" : "none") : String(l[0]).startsWith("g") ? "ghost" : "voter";
     o.prefix = o.epic.slice(0, 3);
     o.checks = {
       noHouse: !o.house,
       extra: /[A-Za-z]/.test(o.name + o.rname) || o.issue.includes("unplaced"),
-      unsure: !!o.link?.note,
+      unsure: !!o.link?.note || !!o.familyLinkNote,
     };
     return o;
   });
@@ -96,6 +99,9 @@ export function init(RAW) {
   }
 
   PARTS = [...count(VOTERS, (o) => o.part)].sort((a, b) => a[0] - b[0]);
+  MPTCS = [...count(VOTERS, (o) => o.mptcConstituency || "")].filter(([v]) => v).sort((a, b) => a[0].localeCompare(b[0], "te"));
+  GRAM_PANCHAYATS = [...count(VOTERS, (o) => o.gramPanchayat || "")].filter(([v]) => v).sort((a, b) => a[0].localeCompare(b[0], "te"));
+  POLLING_STATIONS = [...count(VOTERS, (o) => o.pollingStationNo)].filter(([v]) => v).sort((a, b) => a[0] - b[0]);
 
   if (HAS_POLLING_PARTS) {
     const booths = [...count(VOTERS, (o) => o.booth)].sort((a, b) => a[0] - b[0]);

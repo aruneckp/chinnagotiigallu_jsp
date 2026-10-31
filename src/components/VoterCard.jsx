@@ -19,6 +19,7 @@ export default function VoterCard({ o, note }) {
           <span className={`tag ${sex(o)}`}>{o.gender}</span>
           <span className="tag">{o.house ? `H ${o.house}` : "House not printed"}</span>
           <span className="tag">{partLabel(o.part)}{o.page ? ` · p${o.page}` : ""}</span>
+          {o.gramPanchayat && <span className="tag">{o.gramPanchayat} · PS {o.pollingStationNo}</span>}
           {SHOW_VOTER_ID && <span className="tag mono">{o.epic}</span>}
         </span>
       </span>

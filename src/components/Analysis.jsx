@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { HAS_POLLING_PARTS, PARTS, BOOTHS, MAIN_BLOCKS, SERIES, FAMILIES, boothLabel, groupLabel, partLabel, seriesLabel, person } from "../lib/data.js";
+import { HAS_POLLING_PARTS, PARTS, BOOTHS, MAIN_BLOCKS, SERIES, MPTCS, GRAM_PANCHAYATS, POLLING_STATIONS,
+  FAMILIES, boothLabel, groupLabel, partLabel, seriesLabel, person } from "../lib/data.js";
 import { EMPTY, activeFilters, clearFilter, isScoped, FAM_SIZES, RELATIONS, LINKS, CHECKS } from "../lib/filters.js";
 import { summarize, groupBy, AGE_BANDS, bandLabel, bandOf, fmt, pct, ratio, inBucket } from "../lib/stats.js";
 import { go } from "../lib/route.js";
@@ -13,7 +14,10 @@ const bandPatch = (i) => { const [a, b] = AGE_BANDS[i]; return { ageMin: String(
 
 // Dimensions for the breakdown table: [label, key of a voter, label of a key, filter for a key, key order]
 const DIMS = {
-  part: ["Village / PDF", (o) => o.part, partLabel, (k) => ({ part: String(k) }), () => PARTS.map((p) => p[0])],
+  part: ["Polling station / PDF", (o) => o.part, partLabel, (k) => ({ part: String(k) }), () => PARTS.map((p) => p[0])],
+  mptc: ["MPTC constituency", (o) => o.mptcConstituency, (k) => k, (k) => ({ mptc: k }), () => MPTCS.map(([v]) => v)],
+  gp: ["Gram Panchayat / Ward", (o) => o.gramPanchayat, (k) => k, (k) => ({ gp: k }), () => GRAM_PANCHAYATS.map(([v]) => v)],
+  ps: ["Polling Station", (o) => String(o.pollingStationNo), (k) => `PS ${k}`, (k) => ({ ps: String(k) }), () => POLLING_STATIONS.map(([v]) => String(v))],
   booth: ["Polling part", (o) => o.boothGroup, boothLabel, (k) => ({ booth: k }), () => BOOTHS.map((b) => b[0])],
   block: ["Block", (o) => o.blockGroup, groupLabel, blockPatch, () => [...MAIN_BLOCKS, "~other", "?", ""]],
   age: ["Age group", (o) => bandOf(o.age), (k) => bandLabel(AGE_BANDS[k]), bandPatch, () => AGE_BANDS.map((_, i) => i)],
@@ -186,7 +190,10 @@ export default function Analysis({ filters, setFilters, results, openList }) {
       <SecHead icon="chart" title="Analysis" sub="Every chart below uses the same voters: change the scope here or filter the voter list, then tap any bar, cell or row to list those voters." />
 
       <section className="scope">
-        {scopeSelect("part", "Village / PDF", PARTS.map(([p]) => [String(p), partLabel(p)]))}
+        {scopeSelect("mptc", "MPTC", MPTCS.map(([v]) => [v, v]))}
+        {scopeSelect("gp", "Gram Panchayat / Ward", GRAM_PANCHAYATS.map(([v]) => [v, v]))}
+        {scopeSelect("part", "Polling station", PARTS.map(([p]) => [String(p), partLabel(p)]))}
+        {scopeSelect("ps", "PS number", POLLING_STATIONS.map(([p]) => [String(p), `PS ${p}`]))}
         {HAS_POLLING_PARTS && scopeSelect("booth", "Polling part", BOOTHS.map(([b]) => [b, boothLabel(b)]))}
         {scopeSelect("block", "Block", [...MAIN_BLOCKS.map((b) => [b, b]), ["~other", "Other blocks"], ["?", "Door no. unclear"]])}
         {scopeSelect("gen", "Gender", [["Male", "Men"], ["Female", "Women"]])}
@@ -232,8 +239,8 @@ export default function Analysis({ filters, setFilters, results, openList }) {
 
           <StackBars title="Voters by block" sub="Block from the door number; small blocks grouped" rows={blocks}
             onPick={(r) => openList(blockPatch(r.key))} />
-          {HAS_POLLING_PARTS && <Heat title="Village / PDF × polling part" sub="Where each source PDF's voters vote. Tap a cell to list them."
-            rowLabel="Village / PDF" colLabel="Polling part"
+          {HAS_POLLING_PARTS && <Heat title="Polling station × AC polling part" sub="Distribution across local stations and assembly polling parts. Tap a cell to list voters."
+            rowLabel="Polling station" colLabel="AC polling part"
             rows={PARTS.map(([p]) => ({ key: p, label: partLabel(p) }))}
             cols={BOOTHS.map(([b]) => ({ key: b, label: b === "other" ? "Other" : b }))}
             value={(r, c) => matrix[r.key + "|" + c.key] || 0}

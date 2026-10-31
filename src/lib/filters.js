@@ -1,16 +1,18 @@
-import { PARTS, BOOTHS, BLOCKS, SERIES, blockLabel, boothLabel, seriesLabel, groupLabel, partLabel } from "./data.js";
+import { PARTS, BOOTHS, BLOCKS, SERIES, MPTCS, GRAM_PANCHAYATS, POLLING_STATIONS,
+  blockLabel, boothLabel, seriesLabel, groupLabel, partLabel } from "./data.js";
 import { compileQuery } from "./search.js";
 import { inBucket } from "./stats.js";
 
 export const EMPTY = {
-  q: "", qf: "any", part: "", booth: "", block: "", gen: "", ageMin: "", ageMax: "",
+  q: "", qf: "any", part: "", booth: "", block: "", mptc: "", gp: "", ps: "", gen: "", ageMin: "", ageMax: "",
   rel: "", fam: "", hh: "", link: "", series: "", check: "", sort: "sn",
 };
 
 export const RELATIONS = [["Father", "Father"], ["Husband", "Husband"], ["Mother", "Mother"], ["none", "Not printed"]];
 export const FAM_SIZES = [["1", "Alone"], ["2", "2"], ["3-4", "3–4"], ["5+", "5+"]];
 export const HH_SIZES = [["1", "1"], ["2-3", "2–3"], ["4-6", "4–6"], ["7+", "7+"]];
-export const LINKS = [["voter", "Relative found on the list"], ["ghost", "Relative not on the list"], ["none", "No relative printed"]];
+export const LINKS = [["voter", "Relative found on the list"], ["ghost", "Relative not on the list"],
+  ["review", "Family match needs review"], ["none", "No relative printed"]];
 export const CHECKS = [["noHouse", "House no. not printed"], ["extra", "Extra text in name"], ["unsure", "Family link to check"]];
 
 // Every filter on the voter list, in the order the filter panel shows them. To add a
@@ -20,6 +22,15 @@ export const FACETS = [
   { key: "part", label: "Village / PDF", chips: true,
     options: () => PARTS.map(([p, n]) => [String(p), partLabel(p), n]),
     test: (o, v) => String(o.part) === v, chipLabel: (v) => partLabel(v) },
+  { key: "mptc", label: "MPTC Constituency", chips: true,
+    options: () => MPTCS.map(([v, n]) => [v, v, n]),
+    test: (o, v) => o.mptcConstituency === v },
+  { key: "gp", label: "Gram Panchayat / Ward", chips: true,
+    options: () => GRAM_PANCHAYATS.map(([v, n]) => [v, v, n]),
+    test: (o, v) => o.gramPanchayat === v },
+  { key: "ps", label: "Polling Station (PS)", chips: true,
+    options: () => POLLING_STATIONS.map(([v, n]) => [String(v), `PS ${v}`, n]),
+    test: (o, v) => String(o.pollingStationNo) === v, chipLabel: (v) => `PS ${v}` },
   { key: "booth", label: "Polling part (AC 167)", chips: true,
     options: () => BOOTHS.map(([b, n]) => [b, boothLabel(b), n]),
     test: (o, v) => o.boothGroup === v, chipLabel: (v) => (v === "other" ? "Other polling parts" : `Polling part ${v}`) },

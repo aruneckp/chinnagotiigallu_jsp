@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { VOTERS, META, HAS_POLLING_PARTS, PARTS, BOOTHS, FAMILIES, GHOST_BY_ID, MAIN_BLOCKS, boothLabel, groupLabel, partLabel } from "../lib/data.js";
+import { VOTERS, META, HAS_POLLING_PARTS, PARTS, BOOTHS, MPTCS, GRAM_PANCHAYATS, FAMILIES, GHOST_BY_ID, MAIN_BLOCKS, boothLabel, groupLabel, partLabel } from "../lib/data.js";
 import { summarize, groupBy, fmt, pct, ratio } from "../lib/stats.js";
 import { SEARCH_FIELDS, PLACEHOLDER } from "../lib/search.js";
 import { go } from "../lib/route.js";
@@ -24,6 +24,14 @@ export default function Overview({ openList }) {
       return { p, ...summarize(list), pages: printedPages.length ? range(printedPages) : null,
         booths: [...new Set(list.map((o) => o.boothGroup))].filter((b) => b !== "other").sort() };
     });
+  }, []);
+  const mptcGroups = useMemo(() => {
+    const by = groupBy(VOTERS, (o) => o.mptcConstituency);
+    return MPTCS.map(([name]) => ({ name, ...summarize(by.get(name)) }));
+  }, []);
+  const gpGroups = useMemo(() => {
+    const by = groupBy(VOTERS, (o) => o.gramPanchayat);
+    return GRAM_PANCHAYATS.map(([name]) => ({ name, ...summarize(by.get(name)) }));
   }, []);
   const booths = useMemo(() => {
     const by = groupBy(VOTERS, (o) => o.boothGroup);
@@ -98,9 +106,35 @@ export default function Overview({ openList }) {
           onClick={() => openList({ ageMin: "60" }, true)} />
         <Kpi icon="user" label="Aged 80+" value={fmt(s.elder)} sub={`${pct(s.elder, s.total)}% of voters`} tone="t2"
           onClick={() => openList({ ageMin: "80" }, true)} />
+        <Kpi icon="layers" label="MPTC Constituencies" value={MPTCS.length} sub="filterable groups" />
+        <Kpi icon="pin" label="Gram Panchayats / Wards" value={GRAM_PANCHAYATS.length} sub={`${META.pollingStationCount || PARTS.length} polling stations`} />
       </section>
 
-      <SecHead icon="layers" title={META.partLabel || "Ward parts"} sub="Each group is mapped from its source PDF. Tap one to list its voters." />
+      <SecHead icon="layers" title="MPTC Constituencies" sub="Voter, household, age and gender summaries. Select a constituency to filter." />
+      <section className="tiles">
+        {mptcGroups.map((g) => (
+          <button key={g.name} type="button" className="tile" onClick={() => openList({ mptc: g.name }, true)}>
+            <span className="tile-top"><b lang="te">{g.name}</b></span>
+            <span className="tile-count"><b>{fmt(g.total)}</b> voters · {pct(g.total, s.total)}%</span>
+            <GenderBar m={g.male} f={g.female} o={g.other} />
+            <span className="tile-meta"><span><Icon name="house" size={13} />{fmt(g.households)} homes</span><span>avg {g.avgAge.toFixed(0)} yrs</span></span>
+          </button>
+        ))}
+      </section>
+
+      <SecHead icon="pin" title="Gram Panchayats / Wards" sub="Village-level distribution from the polling-station sheet." />
+      <section className="tiles">
+        {gpGroups.map((g) => (
+          <button key={g.name} type="button" className="tile" onClick={() => openList({ gp: g.name }, true)}>
+            <span className="tile-top"><b lang="te">{g.name}</b></span>
+            <span className="tile-count"><b>{fmt(g.total)}</b> voters · {pct(g.total, s.total)}%</span>
+            <GenderBar m={g.male} f={g.female} o={g.other} />
+            <span className="tile-meta"><span><Icon name="house" size={13} />{fmt(g.households)} homes</span><span>{fmt(g.families)} families</span><span>avg {g.avgAge.toFixed(0)} yrs</span></span>
+          </button>
+        ))}
+      </section>
+
+      <SecHead icon="layers" title="Polling Stations / Source PDFs" sub="Each station maps to its roll PDF. Tap one to list its voters." />
       <section className="tiles">
         {parts.map((p) => (
           <button key={p.p} type="button" className="tile" onClick={() => openList({ part: String(p.p) }, true)}>
@@ -119,7 +153,7 @@ export default function Overview({ openList }) {
       </section>
 
       {HAS_POLLING_PARTS && <>
-      <SecHead icon="booth" title="Polling parts" sub={`Assembly constituency ${META.ac} part numbers printed against each voter.`} />
+      <SecHead icon="booth" title="Assembly polling parts" sub={`Assembly constituency ${META.ac} part numbers printed against each voter.`} />
       <section className="tiles">
         {booths.map((b) => (
           <button key={b.b} type="button" className="tile" onClick={() => openList({ booth: b.b }, true)}>

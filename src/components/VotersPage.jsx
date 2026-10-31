@@ -24,6 +24,9 @@ const columnsFor = (hasPollingParts) => [
   ["Gender", null, (o) => <span className={"gtag " + sex(o)}>{o.g}</span>],
   ["House no.", "house", (o) => (o.house ? <span className="nowrap">{o.house}</span> : <span className="muted">not printed</span>)],
   [META.partLabel ? "House group" : "Block", null, (o) => groupLabel(o.block)],
+  ["MPTC", null, (o) => o.mptcConstituency || "—"],
+  ["Gram Panchayat / Ward", null, (o) => o.gramPanchayat || "—"],
+  ["PS", null, (o) => o.pollingStationNo ? `PS ${o.pollingStationNo}` : "—"],
   [META.partLabel || "Part", null, (o) => partLabel(o.part)],
   ...(hasPollingParts ? [["Polling part · sl.", "booth", (o) => `${o.booth} · ${o.bsn}`]] : []),
   ...(SHOW_VOTER_ID ? [["Voter ID", null, (o) => <span className="mono">{o.epic}</span>]] : []),
@@ -36,12 +39,18 @@ const columnsFor = (hasPollingParts) => [
 ];
 
 export function exportVoters(list, name) {
-  const head = ["Source PDF", "Serial no. in PDF", "Roll page", ...(HAS_POLLING_PARTS ? ["Assembly constituency part", "Assembly constituency serial"] : []), "Name", "Name (English sound)",
-    "Relation", "Relative's name", "Age", "Gender", "House no.", "Block", ...(SHOW_VOTER_ID ? ["Voter ID card"] : []),
-    "Family id", "Family size (voters)", "Voters at the house", "Family link", "Link note"];
-  const rows = list.map((o) => [o.sourceFile || partLabel(o.part), o.sn, o.page, ...(HAS_POLLING_PARTS ? [o.booth, o.bsn] : []), o.name, o.key, o.rel, o.rname, o.age, o.gender,
-    o.house, groupLabel(o.block), ...(SHOW_VOTER_ID ? [o.epic] : []), o.fam, o.famSize, o.hhSize || "",
-    { voter: "Relative on the list", ghost: "Relative not on the list", none: "" }[o.linkKind], o.link?.note || ""]);
+  const head = ["Source PDF", "Serial no. in PDF", "Roll page", "MPTC Constituency", "Gram Panchayat / Ward",
+    "Polling station no.", "Polling station building", "Polling station locality", "PS house range", "PS voter serial range",
+    "PS listed voters", "Voter category", "PS match check", ...(HAS_POLLING_PARTS ? ["Assembly constituency number", "Assembly constituency part", "Assembly constituency serial"] : []),
+    "Name", "Name (English sound)", "Relation", "Relative's name", "Age", "Gender", "House no.", "House group", ...(SHOW_VOTER_ID ? ["Voter ID card"] : []),
+    "Family id", "Family size (voters)", "Voters at the house", "Family link", "Link note", "Family match review"];
+  const rows = list.map((o) => [o.sourceFile || partLabel(o.part), o.sn, o.page, o.mptcConstituency, o.gramPanchayat,
+    o.pollingStationNo, o.pollingStationBuilding, o.pollingStationLocality,
+    `${o.psHouseNoFrom || ""} – ${o.psHouseNoTo || ""}`, `${o.psSerialFrom || ""} – ${o.psSerialTo || ""}`,
+    o.psTotalVoters, o.psVotersFor, o.psMatchCheck, ...(HAS_POLLING_PARTS ? [o.ac, o.booth, o.bsn] : []),
+    o.name, o.key, o.rel, o.rname, o.age, o.gender, o.house, groupLabel(o.block), ...(SHOW_VOTER_ID ? [o.epic] : []), o.fam, o.famSize, o.hhSize || "",
+    { voter: "Relative on the list", ghost: "Relative not on the list", review: "Potential cross-village match", none: "" }[o.linkKind],
+    o.link?.note || "", o.familyLinkNote || ""]);
   download(name, toCSV(head, rows));
 }
 

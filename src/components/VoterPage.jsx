@@ -41,12 +41,23 @@ export default function VoterPage({ voter: o, results }) {
     [META.partLabel ? "House group" : "Block", groupLabel(o.block)],
     ["Source PDF / village", o.sourceFile || partLabel(o.part)],
     ["Serial in PDF · page", `${o.sn}${o.page ? ` · ${o.page}` : ""}`],
+    ...(o.mptcConstituency ? [["MPTC Constituency", o.mptcConstituency]] : []),
+    ...(o.gramPanchayat ? [["Gram Panchayat / Ward", o.gramPanchayat]] : []),
+    ...(o.pollingStationNo ? [["Polling Station", `PS ${o.pollingStationNo}`]] : []),
+    ...(o.pollingStationBuilding ? [["Polling station building", o.pollingStationBuilding]] : []),
+    ...(o.pollingStationLocality ? [["Polling station area", o.pollingStationLocality]] : []),
+    ...(o.psSerialFrom ? [["Polling-station serial range", `${o.psSerialFrom}–${o.psSerialTo}`]] : []),
+    ...(o.psHouseNoFrom ? [["Polling-station house range", `${o.psHouseNoFrom}–${o.psHouseNoTo}`]] : []),
+    ...(o.psTotalVoters ? [["Polling-station sheet total", o.psTotalVoters]] : []),
+    ...(o.psVotersFor ? [["Voter category", o.psVotersFor]] : []),
+    ...(o.psMatchCheck ? [["Station mapping check", o.psMatchCheck]] : []),
     ...(HAS_POLLING_PARTS ? [["Assembly constituency part · serial", `Part ${o.booth} · serial ${o.bsn}`]] : []),
     ...(SHOW_VOTER_ID ? [["Voter ID card", <><span className="mono">{o.epic}</span> <CopyButton text={o.epic} /></>]] : []),
     ["Family link", relative
       ? <>{o.link.type} <span lang="te">{relative.name}</span> · {HOW[o.link.how] || o.link.how}</>
-      : "No relative printed"],
+      : o.rname ? "Printed relative not matched on this register" : "No relative printed"],
     ...(o.link?.note ? [["Check", <span className="warn"><Icon name="alert" size={14} /> {o.link.note}</span>]] : []),
+    ...(o.familyLinkNote ? [["Family match review", <span className="warn"><Icon name="alert" size={14} /> {o.familyLinkNote}</span>]] : []),
     ...(o.issue ? [["Roll reading", o.issue]] : []),
   ];
 
